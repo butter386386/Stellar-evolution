@@ -1,160 +1,236 @@
 import streamlit as st
+import numpy as np
 import plotly.graph_objects as go
+import time
 
 # --- Page Configuration ---
 st.set_page_config(
-    page_title="Stellar Evolution Explorer",
-    page_icon="✨",
+    page_title="Stellar Evolution Visualizer",
+    page_icon="🌌",
     layout="wide"
 )
 
-# --- Custom CSS for Styling ---
+# --- Custom Styling ---
 st.markdown("""
     <style>
-    .main-title { font-size: 38px; font-weight: bold; color: #FF4B4B; text-align: center; }
-    .subtitle { font-size: 18px; color: #A0A0A0; text-align: center; margin-bottom: 30px; }
-    .card { background-color: #1E1E1E; padding: 20px; border-radius: 10px; border: 1px solid #333; margin-bottom: 20px; }
+    body {
+        color: #fff;
+        background-color: #111;
+    }
+    .stApp {
+        background-color: #111;
+    }
+    .main-title {
+        font-size: 40px;
+        font-weight: bold;
+        color: #636EFA;
+        text-align: center;
+        margin-bottom: 30px;
+    }
+    .subtitle {
+        font-size: 20px;
+        color: #A0A0A0;
+        text-align: center;
+        margin-bottom: 20px;
+    }
+    .status-panel {
+        background-color: rgba(30, 30, 30, 0.8);
+        padding: 20px;
+        border-radius: 10px;
+        margin-bottom: 20px;
+    }
     </style>
 """, unsafe_allow_html=True)
 
 # --- Header Section ---
-st.markdown('<p class="main-title">✨ Stellar Evolution & Life Cycle of a Star</p>', unsafe_allow_html=True)
-st.markdown('<p class="subtitle">An Interactive Physics & Astrophysics Visualizer based on Chapter 13</p>', unsafe_allow_html=True)
+st.markdown('<p class="main-title">🌌 Stellar Evolution: Visual Simulation</p>', unsafe_allow_html=True)
+st.markdown('<p class="subtitle">Interactive visualization of molecular cloud collapse and force balance</p>', unsafe_allow_html=True)
 
-# --- Sidebar Navigation ---
-st.sidebar.title("Navigation")
-app_mode = st.sidebar.radio("Choose a Section:", [
-    "1. Introduction & Birth (Nebula)",
-    "2. Forces & Hydrostatic Equilibrium",
-    "3. Interactive Life Cycle Paths",
-    "4. Final Fates Comparison"
-])
+# --- Simulation Parameters & Sidebar ---
+st.sidebar.header("🔧 Simulation Controls")
 
-# ==========================================
-# SECTION 1: BIRTH & NEBULA
-# ==========================================
-if app_mode == "1. Introduction & Birth (Nebula)":
-    st.header("1. How Stars Are Born: From Dust to Proto-Stars")
+# Parameter Sliders
+n_gas = st.sidebar.slider("Number of Gas Particles (N)", 500, 2000, 1000, 100)
+n_dust = st.sidebar.slider("Number of Dust Particles (N)", 100, 500, 200, 50)
+collapse_speed = st.sidebar.slider("Collapse Speed (Relative)", 0.1, 2.0, 1.0, 0.1)
+duration_sim = st.sidebar.slider("Simulation Seconds", 20, 100, 50, 10)
+
+start_sim = st.sidebar.button("▶️ Start Simulation")
+
+# --- Initialize Simulation Data ---
+num_steps = 100
+t = np.linspace(0, 1, num_steps)
+
+# Helper function to generate cloud coordinates
+def generate_cloud(num_p, base_radius=1.0, dispersion=0.2):
+    radii = base_radius + np.random.normal(0, dispersion, num_p)
+    phi = np.random.uniform(0, 2 * np.pi, num_p)
+    theta = np.arccos(np.random.uniform(-1, 1, num_p))
     
-    col1, col2 = st.columns(2)
+    x = radii * np.sin(theta) * np.cos(phi)
+    y = radii * np.sin(theta) * np.sin(phi)
+    z = radii * np.cos(theta)
+    return x, y, z
+
+# Initial Cloud Data (Gas and Dust)
+x_gas_0, y_gas_0, z_gas_0 = generate_cloud(n_gas, base_radius=1.0, dispersion=0.3)
+x_dust_0, y_dust_0, z_dust_0 = generate_cloud(n_dust, base_radius=1.0, dispersion=0.1)
+
+# Function to calculate collapse based on time 't' and speed
+def get_positions(t_val, x_0, y_0, z_0, speed):
+    collapse_factor = np.exp(-t_val * 4 * speed) # Exponential decay
+    x = x_0 * collapse_factor
+    y = y_0 * collapse_factor
+    z = z_0 * collapse_factor
+    return x, y, z
+
+# --- Plotly Visualization (Figure Factory) ---
+def create_simulation_plot(step, status):
+    # Get current positions
+    x_g, y_g, z_g = get_positions(t[step], x_gas_0, y_gas_0, z_gas_0, collapse_speed)
+    x_d, y_d, z_d = get_positions(t[step], x_dust_0, y_dust_0, z_dust_0, collapse_speed)
+    
+    # Trace for Gas (Filaments/Streams)
+    gas_trace = go.Scatter3d(
+        x=x_g, y=y_g, z=z_g,
+        mode='markers',
+        name='Gas (H, He)',
+        marker=dict(
+            size=2.5,
+            color=t[step],  # Color by simulation time
+            colorscale='Turbo', # Vibrant filament colors
+            opacity=0.4
+        )
+    )
+
+    # Trace for Dust (Solid Particles)
+    dust_trace = go.Scatter3d(
+        x=x_d, y=y_d, z=z_d,
+        mode='markers',
+        name='Dust Particles',
+        marker=dict(
+            size=4,
+            color='#b5651d', # Brown color
+            opacity=0.7,
+            symbol='diamond'
+        )
+    )
+
+    # Core/Proto-star (Central point)
+    core_trace = go.Scatter3d(
+        x=[0], y=[0], z=[0],
+        mode='markers',
+        name='Proto-Star Core',
+        marker=dict(
+            size=15,
+            color='#FFD700', # Gold core
+            opacity=1.0,
+            symbol='circle'
+        )
+    )
+
+    fig = go.Figure(data=[gas_trace, dust_trace, core_trace])
+
+    # Layout Configuration
+    fig.update_layout(
+        scene=dict(
+            xaxis=dict(nticks=4, range=[-1.2, 1.2], showbackground=False),
+            yaxis=dict(nticks=4, range=[-1.2, 1.2], showbackground=False),
+            zaxis=dict(nticks=4, range=[-1.2, 1.2], showbackground=False),
+            camera_eye=dict(x=1.5, y=1.5, z=1.5),
+            aspectmode='cube'
+        ),
+        title=f"MOLECULAR CLOUD COLLAPSE INITIATED<br><span style='font-size:14px; color:#A0A0A0'>{status}</span>",
+        template="plotly_dark",
+        margin=dict(r=0, l=0, b=0, t=60),
+        legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
+    )
+    return fig
+
+# --- Main Application Logic ---
+plot_area = st.empty()  # Container for the chart
+
+# Side panels for status/metrics
+st.sidebar.markdown("---")
+with st.sidebar.container():
+    st.markdown("### 📊 Live Simulation Metrics")
+    metric_gas = st.empty()
+    metric_dust = st.empty()
+    metric_balance = st.empty()
+
+# --- RUN SIMULATION LOOP ---
+if start_sim:
+    for i in range(num_steps):
+        # Determine status and metrics
+        t_current = t[i]
+        sim_time_sec = (i / num_steps) * duration_sim
+        
+        # Calculate simulation time string
+        sim_years_scaled = int(sim_time_sec * 500)
+        time_status = f"SIMULATION TIME: {sim_years_scaled:,} YEARS"
+
+        # Dynamically change status text based on collapse
+        if t_current < 0.3:
+            stage_status = "STABLE CLOUD DISSIPATION"
+        elif t_current < 0.7:
+            stage_status = "RAPID ACCRETION PHASE"
+        else:
+            stage_status = "PROTO-STAR CORE FORMATION"
+        
+        final_status = f"{stage_status} | {time_status}"
+
+        # Get simulation figure
+        fig = create_simulation_plot(i, final_status)
+        plot_area.plotly_chart(fig, use_container_width=True)
+
+        # Update metrics panel
+        gas_remaining = n_gas - (i * (n_gas // num_steps))
+        dust_collected = (i * (n_dust // num_steps))
+        
+        # Simulated Force Balance
+        gravity_val = 5 + (t_current * collapse_speed * 10)
+        pressure_val = 2 + (t_current * 5)
+        
+        balance_text = f"G ({gravity_val:.1f}) > P ({pressure_val:.1f})"
+        
+        with st.sidebar.container():
+            metric_gas.metric(label="Gas Remaining (H, He)", value=f"{gas_remaining}", delta=f"-{n_gas // num_steps}")
+            metric_dust.metric(label="Dust Collected", value=f"{dust_collected}", delta=f"+{n_dust // num_steps}")
+            metric_balance.metric(label="Simulated Force Balance (G vs P)", value=balance_text)
+
+        # Control animation speed
+        time.sleep(duration_sim / num_steps)
+    
+    st.success("Simulation Complete: Proto-Star Core stabilized.")
+
+else:
+    # Initial state
+    st.info("👈 Set parameters and press 'Start Simulation' in the sidebar to visualize.")
+    fig = create_simulation_plot(0, "SIMULATION IDLE | 0 YEARS")
+    plot_area.plotly_chart(fig, use_container_width=True)
+    
+    # Initialize initial metrics
+    with st.sidebar.container():
+        metric_gas.metric(label="Gas Remaining (H, He)", value=f"{n_gas}")
+        metric_dust.metric(label="Dust Collected", value=f"0")
+        metric_balance.metric(label="Simulated Force Balance (G vs P)", value="Idle")
+
+# --- Footer Info ---
+st.markdown("---")
+with st.container():
+    col1, col2 = st.columns([2, 1])
     with col1:
         st.markdown("""
-        * **The Birthplace:** All stars are formed from massive clouds of gas and dust floating in galaxies, known as **nebulae** or **molecular clouds**[span_2](start_span)[span_2](end_span).
-        * **Gravitational Collapse:** Under mutual gravitational attraction, these gas clouds contract. As they contract, their **density and temperature increase** due to the rise in the kinetic energy of particles ($\text{Kinetic Energy} \propto \text{Temperature}$)[span_3](start_span)[span_3](end_span).
-        * **Proto-Star Formation:** After millions of years, these contracting regions evolve into dense cores called **proto-stars**, setting the stage for nuclear reactions[span_4](start_span)[span_4](end_span).
+        ### Understanding the Visualization
+        1.  **Gas (Turbo Filament):** Represents the primary raw materials (Hydrogen, Helium). Brighter points indicate higher temperatures. They form large, swirling structures (filaments).
+        2.  **Dust Particles (Brown Diamonds):** Solid elements and molecules that serve as accretion points, helping build up the core.
+        3.  **Proto-Star Core (Gold Sphere):** The central collection point where density and temperature are rapidly increasing.
+        4.  **Collapse Flow:** As time progresses (or 't' value on sliders increases), particles are visibly drawn toward the center, forming streams (accretion flows).
         """)
     with col2:
-        st.info("💡 **Key Concept:** Kinetic Molecular Theory (KMT) explains that as the gas cloud compresses, particle collisions increase rapidly, causing a sharp rise in temperature and internal thermal pressure.")
-
-    st.subheader("Visualizing Cloud Collapse")
-    collapse_step = st.slider("Select Stage of Cloud Evolution:", 1, 3, 1, 
-                              format="Stage %d")
-    
-    stages = {
-        1: ("Diffuse Nebula / Molecular Cloud", "Spread out dust and gas particles with low temperature and low self-gravity."),
-        2: ("Contracting Proto-Star", "Gravity pulls gas inward, increasing density, pressure, and core temperature."),
-        3: ("Stable Star (Ignition)", "Core temperature reaches millions of degrees, igniting nuclear fusion and establishing balance.")
-    }
-    
-    title, desc = stages[collapse_step]
-    st.success(f"**Current Phase ({title}):** {desc}")
-
-# ==========================================
-# SECTION 2: FORCES & EQUILIBRIUM
-# ==========================================
-elif app_mode == "2. Forces & Hydrostatic Equilibrium":
-    st.header("2. The Tug-of-War: Gravity vs. Internal Pressure")
-    
-    st.markdown("""
-    A stable star is formed when the inward gravitational force is **exactly balanced** by the outward thermal pressure created by nuclear fusion[span_5](start_span)[span_5](end_span). This condition is described mathematically by the **hydrostatic equation**:
-    """)
-    
-    # Displaying equation nicely using standard markdown
-    st.markdown("$$\\frac{dP}{dr} = -\\frac{G M_r \\rho_r}{r^2}$$")
-    st.markdown("""
-    * Where **$P$** is pressure, **$r$** is distance from the center, **$G$** is the universal gravitational constant, **$M_r$** is enclosed mass, and **$\\rho_r$** is density[span_6](start_span)[span_6](end_span).
-    """)
-
-    st.subheader("Interactive Balance Simulator")
-    mass_input = st.slider("Select Star Mass (Solar Masses, $M_\\odot$)", 0.1, 25.0, 1.0)
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric(label="Inward Force (Gravity)", value=f"{mass_input * 1.5:.1f}x")
-    with col2:
-        st.metric(label="Outward Force (Pressure)", value=f"{mass_input * 1.5:.1f}x")
-        
-    if mass_input < 0.5:
-        st.warning("⚠️ **Low Mass (Red Dwarf):** Highly efficient fuel consumption, very slow evolutionary path, eventually transitions to a low mass white dwarf[span_7](start_span)[span_7](end_span).")
-    elif 0.5 <= mass_input <= 8:
-        st.info("⭐ **Intermediate Mass:** Will evolve into a Red Giant, eject a Planetary Nebula, and leave behind a White Dwarf[span_8](start_span)[span_8](end_span).")
-    else:
-        st.error("🔥 **Massive Star:** Experiences rapid fusion, a dramatic Supernova explosion, and collapses into a Neutron Star or Black Hole[span_9](start_span)[span_9](end_span)!")
-
-# ==========================================
-# SECTION 3: LIFE CYCLE PATHS
-# ==========================================
-elif app_mode == "3. Interactive Life Cycle Paths":
-    st.header("3. Evolutionary Paths: Average vs. Massive Stars")
-    
-    path_choice = st.selectbox("Select Stellar Pathway:", [
-        "Average / Intermediate Mass Star (Like our Sun)",
-        "Massive Star Pathway (> 10x Solar Mass)"
-    ])
-    
-    if "Average" in path_choice:
-        st.subheader("⭐ Average Star Life Cycle Pathway")
-        steps = [
-            "1. Stellar Nebula (Gas & Dust Cloud)[span_10](start_span)[span_10](end_span)",
-            "2. Average Star (Main Sequence - Hydrogen Fusion)[span_11](start_span)[span_11](end_span)",
-            "3. Red Giant (Core contracts, outer layers expand and cool)[span_12](start_span)[span_12](end_span)",
-            "4. Planetary Nebula (Outer layers expelled into space)[span_13](start_span)[span_13](end_span)",
-            "5. White Dwarf (Dense carbon-oxygen core left behind)[span_14](start_span)[span_14](end_span)"
-        ]
-        for s in steps:
-            st.markdown(f"👉 {s}")
-            
-    else:
-        st.subheader("🔥 Massive Star Life Cycle Pathway")
-        steps = [
-            "1. Stellar Nebula (Massive Molecular Cloud)[span_15](start_span)[span_15](end_span)[span_16](start_span)[span_16](end_span)",
-            "2. Massive Star (Burns fuel very rapidly at high temperatures)[span_17](start_span)[span_17](end_span)[span_18](start_span)[span_18](end_span)",
-            "3. Red Super Giant (Expands massively with heavy element fusion up to iron)[span_19](start_span)[span_19](end_span)[span_20](start_span)[span_20](end_span)",
-            "4. Supernova (Dramatic explosion triggered by iron core collapse)[span_21](start_span)[span_21](end_span)[span_22](start_span)[span_22](end_span)",
-            "5. Final Remnant: Neutron Star (Ultra-dense) OR Black Hole[span_23](start_span)[span_23](end_span)[span_24](start_span)[span_24](end_span)"
-        ]
-        for s in steps:
-            st.markdown(f"💥 {s}")
-
-# ==========================================
-# SECTION 4: FINAL FATES COMPARISON
-# ==========================================
-elif app_mode == "4. Final Fates Comparison":
-    st.header("4. Summary of Final Remnants")
-    
-    # Creating a comparison chart using Plotly
-    fig = go.Figure(data=[
-        go.Bar(
-            name='Density / Intensity', 
-            x=['White Dwarf', 'Neutron Star', 'Black Hole'], 
-            y=[5, 9, 12],
-            marker_color=['#636EFA', '#EF553B', '#000000']
-        )
-    ])
-    fig.update_layout(
-        title="Relative Density & Gravitational Pull of Final Remnants",
-        xaxis_title="Remnant Type",
-        yaxis_title="Scale (Logarithmic Relative Value)",
-        template="plotly_dark"
-    )
-    st.plotly_chart(fig, use_container_width=True)
-    
-    st.markdown("""
-    * **White Dwarf:** Supported by electron degeneracy pressure; dense core remaining after a planetary nebula[span_25](start_span)[span_25](end_span).
-    * **Neutron Star:** Among the densest objects in the universe[span_26](start_span)[span_26](end_span), formed after a supernova where protons and electrons crush into neutrons.
-    * **Black Hole:** Formed when core collapse is so extreme that gravity traps even light itself[span_27](start_span)[span_27](end_span)[span_28](start_span)[span_28](end_span).
-    """)
-
-# --- Footer ---
-st.sidebar.markdown("---")
-st.sidebar.info("Designed for Physics Students & Educators to visualize Chapter 13 concepts dynamically.")
+        st.markdown("""
+        ### Simulation Mechanics
+        * **N**: The total number of points representing gas or dust.
+        * **Collapse Speed**: A multiplier affecting how rapidly particles are pulled inward (exponential decay model).
+        * **Force Balance**: Gravity (inward pull) must overcome Pressure (outward push) for collapse to sustain. The metric panel shows this simulated dynamic.
+        """)
